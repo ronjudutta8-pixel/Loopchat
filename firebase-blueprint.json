@@ -1,0 +1,92 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile and presence",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "email": { "type": "string" },
+        "phoneNumber": { "type": "string" },
+        "status": { "type": "string" },
+        "lastSeen": { "type": "number" },
+        "isOnline": { "type": "boolean" },
+        "blockedUsers": { "type": "array" },
+        "favoriteIds": { "type": "array" },
+        "pushSubscription": { "type": "object" }
+      },
+      "required": ["uid", "displayName", "email"]
+    },
+    "Chat": {
+      "title": "Chat",
+      "description": "Conversation metadata",
+      "type": "object",
+      "properties": {
+        "participants": { "type": "array", "items": { "type": "string" } },
+        "participantDetails": { "type": "object" },
+        "lastMessage": { "type": "object" },
+        "isGroup": { "type": "boolean" },
+        "groupName": { "type": "string" },
+        "groupPhotoURL": { "type": "string" },
+        "createdBy": { "type": "string" },
+        "admins": { "type": "array", "items": { "type": "string" } },
+        "updatedAt": { "type": "number" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["participants", "createdAt", "updatedAt"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "Individual messages",
+      "type": "object",
+      "properties": {
+        "senderId": { "type": "string" },
+        "senderName": { "type": "string" },
+        "text": { "type": "string" },
+        "timestamp": { "type": "number" },
+        "type": { "type": "string", "enum": ["text", "image", "video", "call_info", "audio"] },
+        "fileUrl": { "type": "string" },
+        "duration": { "type": "number" },
+        "deletedFor": { "type": "array", "items": { "type": "string" } },
+        "isDeletedForEveryone": { "type": "boolean" },
+        "readBy": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["senderId", "text", "timestamp"]
+    },
+    "Call": {
+      "title": "Call",
+      "description": "Active call signaling",
+      "type": "object",
+      "properties": {
+        "callerId": { "type": "string" },
+        "receiverId": { "type": "string" },
+        "status": { "type": "string", "enum": ["ringing", "active", "ended", "missed"] },
+        "type": { "type": "string", "enum": ["audio", "video"] },
+        "createdAt": { "type": "number" },
+        "offer": { "type": "object" },
+        "answer": { "type": "object" }
+      },
+      "required": ["callerId", "receiverId", "status", "type", "createdAt"]
+    },
+    "TypingIndicator": {
+      "title": "Typing Indicator",
+      "description": "Real-time typing status",
+      "type": "object",
+      "properties": {
+        "isTyping": { "type": "boolean" },
+        "displayName": { "type": "string" },
+        "lastUpdated": { "type": "number" }
+      },
+      "required": ["isTyping", "lastUpdated"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": { "schema": "User", "description": "Users collection" },
+    "/chats/{chatId}": { "schema": "Chat", "description": "Chats collection" },
+    "/chats/{chatId}/messages/{messageId}": { "schema": "Message", "description": "Messages subcollection" },
+    "/chats/{chatId}/typing/{userId}": { "schema": "TypingIndicator", "description": "Typing indicators" },
+    "/calls/{callId}": { "schema": "Call", "description": "Calls for signaling" }
+  }
+}

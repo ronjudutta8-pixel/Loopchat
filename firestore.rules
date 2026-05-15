@@ -1,0 +1,168 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Phase 3: Primitives
+    function isSignedIn() { return request.auth != null; }
+    function isVerified() { return isSignedIn() && request.auth.token.email_verified == true; }
+    function isValidId(id) { return id is string && id.size() <= 128; }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+
+    // System Connection Test
+    match /system/connection_test {
+      allow read: if isSignedIn();
+    }
+
+    // 1. Users
+    function isValidUser(data) {
+      return data.uid is string && data.uid == request.auth.uid &&
+             data.displayName is string && data.displayName.size() <= 128 &&
+             (data.get('email', '') is string) &&
+             (data.get('photoURL', '') is string) &&
+             (data.get('isOnline', false) is bool) &&
+             (data.get('lastSeen', 0) is int || data.get('lastSeen', 0) is number || data.get('lastSeen', request.time) is timestamp) &&
+             (data.get('phoneNumber', '') is string) &&
+             (data.get('status', '') is string) &&
+             (data.get('blockedUsers', []) is list) &&
+             (data.get('favoriteIds', []) is list) &&
+             (data.get('pushSubscription', '') is string || data.get('pushSubscription', null) == null || data.get('pushSubscription', {}) is map);
+    }
+
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && userId == request.auth.uid && isValidUser(incoming());
+      allow update: if isSignedIn() && userId == request.auth.uid && 
+                       isValidUser(incoming()) &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL', 'isOnline', 'lastSeen', 'status', 'phoneNumber', 'blockedUsers', 'favoriteIds', 'pushSubscription', 'email', 'uid']);
+    }
+
+    // 2. Chats
+    function isValidChat(data) {
+      return data.participants is list && 
+             data.participants.size() >= 2 && 
+             data.participants.size() <= 100 &&
+             request.auth.uid in data.participants;
+    }
+
+    match /chats/{chatId} {
+      allow get: if isSignedIn() && isValidId(chatId) && request.auth.uid in existing().participants;
+      allow list: if isSignedIn() && request.auth.uid in resource.data.participants;
+      
+      allow create: if isSignedIn() && isValidChat(incoming()) && 
+                       (incoming().get('createdAt', request.time) is timestamp || incoming().get('createdAt', 0) is number);
+      
+      allow update: if isSignedIn() && request.auth.uid in existing().participants &&
+                       (
+                         // Action: Send Message or update metadata
+                         (incoming().participants == existing().participants && 
+                          incoming().diff(existing()).affectedKeys().hasAny(['lastMessage', 'updatedAt', 'participantDetails'])) ||
+                         
+                         // Action: Group Edit (Admin only)
+                         (existing().get('isGroup', false) == true && 
+                          request.auth.uid in existing().get('admins', [existing().get('createdBy', '')]) &&
+                          incoming().diff(existing()).affectedKeys().hasAny(['groupName', 'groupPhotoURL', 'admins', 'participants', 'updatedAt', 'lastMessage']))
+                       );
+
+      allow delete: if isSignedIn() && 
+                       (
+                         (!existing().get('isGroup', false) && request.auth.uid in existing().participants) ||
+                         (existing().get('isGroup', false) && request.auth.uid in existing().get('admins', [existing().get('createdBy', '')]))
+                       );
+    }
+
+    // 3. Messages
+    function isValidMessage(data) {
+      return data.senderId is string && data.senderId == request.auth.uid &&
+             (data.get('text', '') is string) && (data.text.size() <= 5000) &&
+             (data.get('type', 'text') in ['text', 'image', 'video', 'audio', 'call_info']) &&
+             (data.get('readBy', []) is list) &&
+             (data.get('deletedFor', []) is list) &&
+             (data.get('senderName', '') is string);
+    }
+
+    match /chats/{chatId}/messages/{messageId} {
+      allow get: if isSignedIn() && isValidId(messageId) && 
+                    request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants;
+      allow list: if isSignedIn() && 
+                    request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants;
+      
+      allow create: if isSignedIn() && isValidMessage(incoming()) &&
+                       request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants;
+      
+      allow update: if isSignedIn() && 
+                       request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants && (
+        // Action: Delete for me
+        (incoming().diff(existing()).affectedKeys().hasOnly(['deletedFor']) && 
+         request.auth.uid in incoming().deletedFor) ||
+        
+        // Action: Delete for everyone
+        (existing().senderId == request.auth.uid && 
+         incoming().diff(existing()).affectedKeys().hasAny(['isDeletedForEveryone', 'text']) &&
+         existing().get('isDeletedForEveryone', false) == false) ||
+        
+        // Action: Mark as read
+        (incoming().diff(existing()).affectedKeys().hasOnly(['readBy']) &&
+         request.auth.uid in incoming().readBy &&
+         incoming().readBy.hasAll(existing().get('readBy', [])))
+      );
+    }
+
+    // 4. Calls
+    function isValidCall(data) {
+      return data.callerId is string && 
+             data.receiverId is string &&
+             data.status in ['ringing', 'connecting', 'active', 'ended', 'missed'] &&
+             data.type in ['audio', 'video'];
+    }
+
+    match /calls/{callId} {
+      allow get: if isSignedIn() && isValidId(callId) && 
+                    (request.auth.uid == existing().callerId || request.auth.uid == existing().receiverId);
+      allow list: if isSignedIn() && 
+                    (resource.data.callerId == request.auth.uid || resource.data.receiverId == request.auth.uid);
+      
+      allow create: if isSignedIn() && isValidCall(incoming()) && 
+                       incoming().callerId == request.auth.uid &&
+                       incoming().createdAt == request.time;
+      
+      allow update: if isSignedIn() && 
+                       (request.auth.uid == existing().callerId || request.auth.uid == existing().receiverId) &&
+                       incoming().diff(existing()).affectedKeys().hasAny(['status', 'answer', 'offer']);
+
+      allow delete: if isSignedIn() && 
+                       (request.auth.uid == existing().callerId || request.auth.uid == existing().receiverId);
+    }
+
+    match /calls/{callId}/offerCandidates/{id} {
+      allow read, write: if isSignedIn() && 
+                            (request.auth.uid == get(/databases/$(database)/documents/calls/$(callId)).data.callerId || 
+                             request.auth.uid == get(/databases/$(database)/documents/calls/$(callId)).data.receiverId);
+    }
+    match /calls/{callId}/answerCandidates/{id} {
+      allow read, write: if isSignedIn() && 
+                            (request.auth.uid == get(/databases/$(database)/documents/calls/$(callId)).data.callerId || 
+                             request.auth.uid == get(/databases/$(database)/documents/calls/$(callId)).data.receiverId);
+    }
+
+    // 5. Typing Indicators
+    function isValidTyping(data) {
+      return data.isTyping is bool &&
+             (data.get('displayName', '') is string) &&
+             (data.get('lastUpdated', 0) is int || data.get('lastUpdated', 0) is number);
+    }
+
+    match /chats/{chatId}/typing/{userId} {
+      allow get, list: if isSignedIn() && 
+                        request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants;
+      allow write: if isSignedIn() && userId == request.auth.uid &&
+                      isValidTyping(incoming()) &&
+                      request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants;
+    }
+  }
+}

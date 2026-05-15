@@ -1,0 +1,9 @@
+{
+  "name": "Loop",
+  "description": "A WhatsApp-like messaging app with real-time chat, audio, and video calling capabilities.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ],
+  "majorCapabilities": []
+}
