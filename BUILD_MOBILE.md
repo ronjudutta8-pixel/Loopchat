@@ -39,4 +39,17 @@ npm run cap:open
 কিছুক্ষণ পর আপনার APK তৈরি হয়ে যাবে।
 
 ---
+### গুরুত্বপূর্ণ: GitHub Actions এর জন্য
+আপনি যদি GitHub Actions ব্যবহার করে অটোমেটিক APK বিল্ড করতে চান, তবে নিশ্চিত করুন যে আপনি `android` ফোল্ডারটি আপনার গিট (Git) রিপোজিটরিতে **কমিট (Commit)** করেছেন। 
+
+**কমিট করার কমান্ড:**
+```bash
+git add android/
+git commit -m "Add android platform folder"
+git push origin main
+```
+
+আপনার GitHub Action-এর `setup-java` স্টেপে `cache: 'gradle'` অপশনটি থাকলে সেটি এরর দিতে পারে যদি রুট ফোল্ডারে গ্রেডেল ফাইল না থাকে। আমি আপনার প্রজেক্টে একটি সঠিক `android-ci.yml` ফাইল তৈরি করে দিয়েছি যা এই সমস্যা সমাধান করবে।
+
+---
 **বিঃদ্রঃ:** আপনার ফায়ারবেস (Firebase) কনফিগারেশন অ্যান্ড্রয়েড অ্যাপের জন্য ঠিক করা আছে কিনা তা নিশ্চিত করুন (Firebase console থেকে Android app যুক্ত করুন এবং `google-services.json` ফাইলটি `android/app/` ফোল্ডারে রাখুন)।
